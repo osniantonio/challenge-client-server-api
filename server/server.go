@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"log"
 	"net/http"
 	"time"
 
@@ -72,46 +70,21 @@ func fetchExchangeRate(ctx context.Context) (*ExchangeRate, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Failed to fetch exchange rate. Status: %s", resp.Status)
+		return nil, fmt.Errorf("failed to fetch exchange rate. Status: %s", resp.Status)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var data map[string]ExchangeRate
-	err = json.Unmarshal(body, &data)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, exchangeRate := range data {
-		return &exchangeRate, nil
-	}
-
-	return nil, fmt.Errorf("No exchange rate data found")
-}
-
-func findAll() {
-	db, err := sql.Open("sqlite3", "./database.db")
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
-
-	rows, err := db.Query("SELECT bid FROM exchange_rate;")
-	if err != nil {
-		panic(err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var bidValue string
-		err := rows.Scan(&bidValue)
-		if err != nil {
-			log.Fatal(err)
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("context timeout exceeded while fetching exchange rate")
+	default:
+		var data map[string]ExchangeRate
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			return nil, err
 		}
-		fmt.Println("Cotação:", bidValue)
+		for _, exchangeRate := range data {
+			return &exchangeRate, nil
+		}
+		return nil, fmt.Errorf("no exchange rate data found")
 	}
 }
 
@@ -127,14 +100,17 @@ func saveToDatabase(ctx context.Context, db *sql.DB, exchangeRate *ExchangeRate)
 		return err
 	}
 
-	return nil
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("context timeout exceeded while saving to database")
+	default:
+		return nil
+	}
 }
 
 func cotacaoHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 300*time.Millisecond)
 	defer cancel()
-
-	findAll()
 
 	exchangeRate, err := fetchExchangeRate(ctx)
 	if err != nil {
@@ -149,7 +125,7 @@ func cotacaoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	// timeout máximo para conseguir persistir os dados no banco deverá ser de 10ms
+	// e o timeout máximo para conseguir persistir os dados no banco deverá ser de 10ms
 	ctx, cancel = context.WithTimeout(ctx, 10*time.Millisecond)
 	defer cancel()
 

@@ -28,7 +28,28 @@ O endpoint necessário gerado pelo server.go para este desafio será: /cotacao e
 
 Ao finalizar, envie o link do repositório para correção.
 
-# Realizado
+# Para rodar
 
-Em server
-go mod init github.com/osniantonio/desafio/client/server/api
+## Subir o container sqlite_db
+
+docker-compose up -d
+
+## Rodar o server, em server:
+
+go run server.go
+
+    No navegador será disponibilizado o endpoint:
+        http://localhost:8080/cotacao
+
+## Rodar o cliente, em client:
+
+go run client.go
+
+## Resultado ao rodar o cliente
+
+No server:
+A cada chamada é registrado no banco de dados SQLite cada cotação recebida
+
+No client:  
+Um arquivo cotacao.txt será criado em client e com a cotação atual.
+Formato: Dólar:{ 4.9634}
