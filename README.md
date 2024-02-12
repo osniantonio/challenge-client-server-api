@@ -30,18 +30,14 @@ Ao finalizar, envie o link do repositório para correção.
 
 # Para rodar
 
-## Subir o container sqlite_db
-
-docker-compose up -d
-
-## Rodar o server, em server:
+## Rodar o server, no diretório server:
 
 go run server.go
 
     No navegador será disponibilizado o endpoint:
         http://localhost:8080/cotacao
 
-## Rodar o cliente, em client:
+## Rodar o cliente, no diretório client:
 
 go run client.go
 
