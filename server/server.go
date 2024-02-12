@@ -52,11 +52,10 @@ func beforeStart() {
 	}
 }
 
-// o timeout máximo para chamar a API de cotação do dólar deverá ser de 200ms
 func fetchExchangeRate(ctx context.Context) (*ExchangeRate, error) {
-	client := http.Client{
-		Timeout: 200 * time.Millisecond,
-	}
+	startTime := time.Now()
+
+	client := http.Client{}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, URLUsdBrl, nil)
 	if err != nil {
@@ -64,6 +63,12 @@ func fetchExchangeRate(ctx context.Context) (*ExchangeRate, error) {
 	}
 
 	resp, err := client.Do(req)
+	select {
+	case <-ctx.Done():
+		panic("context timeout exceeded while fetching exchange rate")
+	default:
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -73,22 +78,23 @@ func fetchExchangeRate(ctx context.Context) (*ExchangeRate, error) {
 		return nil, fmt.Errorf("failed to fetch exchange rate. Status: %s", resp.Status)
 	}
 
-	select {
-	case <-ctx.Done():
-		return nil, fmt.Errorf("context timeout exceeded while fetching exchange rate")
-	default:
-		var data map[string]ExchangeRate
-		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-			return nil, err
-		}
-		for _, exchangeRate := range data {
-			return &exchangeRate, nil
-		}
-		return nil, fmt.Errorf("no exchange rate data found")
+	elapsedTime := time.Since(startTime)
+	fmt.Printf("Execution time (fetchExchangeRate): %v\n", elapsedTime)
+
+	var data map[string]ExchangeRate
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
 	}
+
+	for _, exchangeRate := range data {
+		return &exchangeRate, nil
+	}
+
+	return nil, fmt.Errorf("no exchange rate data found")
 }
 
 func saveToDatabase(ctx context.Context, db *sql.DB, exchangeRate *ExchangeRate) error {
+	startTime := time.Now()
 	stmt, err := db.PrepareContext(ctx, "INSERT INTO exchange_rate (bid) VALUES (?)")
 	if err != nil {
 		return err
@@ -96,20 +102,25 @@ func saveToDatabase(ctx context.Context, db *sql.DB, exchangeRate *ExchangeRate)
 	defer stmt.Close()
 
 	_, err = stmt.ExecContext(ctx, exchangeRate.Bid)
+
+	elapsedTime := time.Since(startTime)
+	fmt.Printf("Execution time (saveToDatabase): %v\n", elapsedTime)
+
 	if err != nil {
 		return err
 	}
 
 	select {
 	case <-ctx.Done():
-		return fmt.Errorf("context timeout exceeded while saving to database")
+		panic("context timeout exceeded while saving to database")
 	default:
 		return nil
 	}
 }
 
+// o timeout máximo para chamar a API de cotação do dólar deverá ser de 200ms
 func cotacaoHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 300*time.Millisecond)
+	ctx, cancel := context.WithTimeout(r.Context(), 200*time.Millisecond)
 	defer cancel()
 
 	exchangeRate, err := fetchExchangeRate(ctx)
@@ -118,7 +129,7 @@ func cotacaoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db, err := sql.Open("sqlite3", "database.db")
+	db, err := sql.Open("sqlite3", "./database.db")
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to open database: %s", err), http.StatusInternalServerError)
 		return
